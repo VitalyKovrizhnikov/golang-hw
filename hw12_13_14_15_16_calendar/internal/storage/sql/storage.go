@@ -111,6 +111,7 @@ func (s *Storage) UpdateEvent(ctx context.Context, id string, event storage.Even
 			description = $4,
 			user_id = $5,
 			notify_before = $6,
+			notified_at = NULL,
 			updated_at = NOW()
 		WHERE id = $7`,
 		event.Title,
@@ -252,6 +253,107 @@ func (s *Storage) ListEventsByPeriod(ctx context.Context, userID string, from, t
 	}
 
 	return events, nil
+}
+
+func (s *Storage) ListEventsForNotification(ctx context.Context, now time.Time) ([]storage.Event, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, title, start_at, end_at, description, user_id, notify_before
+		FROM events
+		WHERE notify_before > 0
+			AND notified_at IS NULL
+			AND start_at > $1
+			AND start_at - $1 <= (notify_before * interval '1 microsecond') / 1000
+		ORDER BY start_at, id`,
+		now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list events for notification: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	var events []storage.Event
+	for rows.Next() {
+		var event storage.Event
+		var notifyBefore int64
+
+		if err := rows.Scan(
+			&event.ID,
+			&event.Title,
+			&event.StartAt,
+			&event.EndAt,
+			&event.Description,
+			&event.UserID,
+			&notifyBefore,
+		); err != nil {
+			return nil, fmt.Errorf("scan event: %w", err)
+		}
+
+		event.NotifyBefore = time.Duration(notifyBefore)
+		events = append(events, event)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate events: %w", err)
+	}
+
+	return events, nil
+}
+
+func (s *Storage) MarkEventNotified(ctx context.Context, id string, at time.Time) error {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE events
+		SET notified_at = $2,
+			updated_at = NOW()
+		WHERE id = $1`,
+		id,
+		at,
+	)
+	if err != nil {
+		return fmt.Errorf("mark event notified: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark event notified rows affected: %w", err)
+	}
+	if affected == 0 {
+		return storage.ErrEventNotFound
+	}
+
+	return nil
+}
+
+func (s *Storage) DeleteEventsBefore(ctx context.Context, before time.Time) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM events WHERE end_at < $1`, before)
+	if err != nil {
+		return 0, fmt.Errorf("delete old events: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("delete old events rows affected: %w", err)
+	}
+
+	return affected, nil
+}
+
+func (s *Storage) SaveNotification(ctx context.Context, notification storage.Notification) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO notifications (event_id, title, start_at, user_id)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (event_id, user_id) DO NOTHING`,
+		notification.EventID,
+		notification.Title,
+		notification.StartAt,
+		notification.UserID,
+	)
+	if err != nil {
+		return fmt.Errorf("save notification: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Storage) eventExists(ctx context.Context, id string) (bool, error) {

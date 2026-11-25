@@ -226,6 +226,94 @@ func TestListEventsByPeriod(t *testing.T) {
 	}
 }
 
+func TestNotificationLifecycle(t *testing.T) {
+	store := New()
+	ctx := context.Background()
+
+	event := testEvent(firstEventID, firstUserID, at(12, 0))
+	event.NotifyBefore = time.Hour
+	if err := store.CreateEvent(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := store.ListEventsForNotification(ctx, at(10, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("got %d early notifications, want 0", len(events))
+	}
+
+	now := at(11, 30)
+	events, err = store.ListEventsForNotification(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].ID != firstEventID {
+		t.Fatalf("events = %+v, want %s", events, firstEventID)
+	}
+
+	if err := store.MarkEventNotified(ctx, firstEventID, now); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err = store.ListEventsForNotification(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("got %d already notified events, want 0", len(events))
+	}
+
+	updated := testEvent(firstEventID, firstUserID, at(12, 0))
+	updated.NotifyBefore = time.Hour
+	if err := store.UpdateEvent(ctx, firstEventID, updated); err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := store.ListEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !all[0].NotifiedAt.IsZero() {
+		t.Fatal("notified_at was not reset by update")
+	}
+
+	notification := storage.Notification{
+		EventID: firstEventID,
+		Title:   eventTitle,
+		StartAt: event.StartAt,
+		UserID:  firstUserID,
+	}
+	if err := store.SaveNotification(ctx, notification); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveNotification(ctx, notification); err != nil {
+		t.Fatal(err)
+	}
+
+	notifications, err := store.ListNotifications(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("got %d notifications, want 1", len(notifications))
+	}
+
+	old := testEvent("old-event", firstUserID, at(0, 0))
+	if err := store.CreateEvent(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := store.DeleteEventsBefore(ctx, at(2, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 1 {
+		t.Fatalf("deleted = %d, want 1", deleted)
+	}
+}
+
 func TestCanceledContext(t *testing.T) {
 	store := New()
 	ctx, cancel := context.WithCancel(context.Background())
