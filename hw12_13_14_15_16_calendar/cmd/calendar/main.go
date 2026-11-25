@@ -3,15 +3,19 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/fixme_my_friend/hw12_13_14_15_16_calendar/internal/app"
-	"github.com/fixme_my_friend/hw12_13_14_15_16_calendar/internal/logger"
-	internalhttp "github.com/fixme_my_friend/hw12_13_14_15_16_calendar/internal/server/http"
-	memorystorage "github.com/fixme_my_friend/hw12_13_14_15_16_calendar/internal/storage/memory"
+	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/app"
+	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/logger"
+	internalhttp "github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/server/http"
+	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/storage"
+	memorystorage "github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/storage/memory"
+	sqlstorage "github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/storage/sql"
 )
 
 var configFile string
@@ -21,41 +25,72 @@ func init() {
 }
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	flag.Parse()
 
 	if flag.Arg(0) == "version" {
 		printVersion()
-		return
+		return 0
 	}
 
-	config := NewConfig()
+	config, err := NewConfig(configFile)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
+		return 1
+	}
+
 	logg := logger.New(config.Logger.Level)
 
-	storage := memorystorage.New()
-	calendar := app.New(logg, storage)
+	store, closeStore, err := buildStorage(config)
+	if err != nil {
+		logg.Error("failed to init storage: " + err.Error())
+		return 1
+	}
+	defer closeStore()
 
-	server := internalhttp.NewServer(logg, calendar)
+	calendar := app.New(logg, store)
+	address := net.JoinHostPort(config.HTTP.Host, config.HTTP.Port)
+	server := internalhttp.NewServer(logg, calendar, address)
 
-	ctx, cancel := signal.NotifyContext(context.Background(),
-		syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	go func() {
-		<-ctx.Done()
-
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-		defer cancel()
-
-		if err := server.Stop(ctx); err != nil {
-			logg.Error("failed to stop http server: " + err.Error())
-		}
-	}()
-
-	logg.Info("calendar is running...")
+	logg.Info("calendar is running on " + address)
 
 	if err := server.Start(ctx); err != nil {
-		logg.Error("failed to start http server: " + err.Error())
-		cancel()
-		os.Exit(1) //nolint:gocritic
+		logg.Error("failed to run http server: " + err.Error())
+		return 1
+	}
+
+	logg.Info("calendar stopped")
+
+	return 0
+}
+
+func buildStorage(config Config) (storage.Storage, func(), error) {
+	switch config.Storage.Type {
+	case storageTypeMemory:
+		return memorystorage.New(), func() {}, nil
+	case storageTypeSQL:
+		store, err := sqlstorage.New(config.Storage.DSN)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := store.Connect(ctx); err != nil {
+			return nil, nil, err
+		}
+
+		return store, func() {
+			_ = store.Close(context.Background())
+		}, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported storage type %q", config.Storage.Type)
 	}
 }
