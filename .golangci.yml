@@ -10,6 +10,7 @@ linters-settings:
     statements: 80
 
 issues:
+  exclude-generated: true
   exclude-rules:
     - path: _test\.go
       linters:

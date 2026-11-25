@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"time"
 
 	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/storage"
 )
@@ -59,6 +60,16 @@ func (a *App) DeleteEvent(ctx context.Context, id string) error {
 
 func (a *App) ListEvents(ctx context.Context) ([]storage.Event, error) {
 	events, err := a.storage.ListEvents(ctx)
+	if err != nil {
+		a.logger.Error("failed to list events: " + err.Error())
+		return nil, err
+	}
+
+	return events, nil
+}
+
+func (a *App) ListEventsByPeriod(ctx context.Context, userID string, from, to time.Time) ([]storage.Event, error) {
+	events, err := a.storage.ListEventsByPeriod(ctx, userID, from, to)
 	if err != nil {
 		a.logger.Error("failed to list events: " + err.Error())
 		return nil, err

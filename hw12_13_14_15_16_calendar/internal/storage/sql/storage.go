@@ -197,6 +197,63 @@ func (s *Storage) ListEvents(ctx context.Context) ([]storage.Event, error) {
 	return events, nil
 }
 
+func (s *Storage) ListEventsByPeriod(ctx context.Context, userID string, from, to time.Time) ([]storage.Event, error) {
+	var fromParam interface{}
+	if !from.IsZero() {
+		fromParam = from
+	}
+
+	var toParam interface{}
+	if !to.IsZero() {
+		toParam = to
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, title, start_at, end_at, description, user_id, notify_before
+		FROM events
+		WHERE user_id = $1
+			AND ($2::timestamptz IS NULL OR end_at > $2)
+			AND ($3::timestamptz IS NULL OR start_at < $3)
+		ORDER BY start_at, id`,
+		userID,
+		fromParam,
+		toParam,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list events by period: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	var events []storage.Event
+	for rows.Next() {
+		var event storage.Event
+		var notifyBefore int64
+
+		if err := rows.Scan(
+			&event.ID,
+			&event.Title,
+			&event.StartAt,
+			&event.EndAt,
+			&event.Description,
+			&event.UserID,
+			&notifyBefore,
+		); err != nil {
+			return nil, fmt.Errorf("scan event: %w", err)
+		}
+
+		event.NotifyBefore = time.Duration(notifyBefore)
+		events = append(events, event)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate events: %w", err)
+	}
+
+	return events, nil
+}
+
 func (s *Storage) eventExists(ctx context.Context, id string) (bool, error) {
 	var exists bool
 

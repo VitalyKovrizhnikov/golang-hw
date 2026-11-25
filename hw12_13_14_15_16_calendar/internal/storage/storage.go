@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 var (
@@ -16,4 +17,5 @@ type Storage interface {
 	UpdateEvent(ctx context.Context, id string, event Event) error
 	DeleteEvent(ctx context.Context, id string) error
 	ListEvents(ctx context.Context) ([]Event, error)
+	ListEventsByPeriod(ctx context.Context, userID string, from, to time.Time) ([]Event, error)
 }

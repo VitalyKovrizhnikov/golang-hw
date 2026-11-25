@@ -25,6 +25,9 @@ run-img: build-img
 version: build
 	$(BIN) version
 
+generate:
+	go run github.com/deepmap/oapi-codegen/cmd/oapi-codegen@v1.12.4 -generate chi-server,types -package openapi -o internal/server/http/openapi/api.gen.go api/openapi.yaml
+
 test:
 	go test -race ./...
 
@@ -37,4 +40,4 @@ lint: install-lint-deps
 migrate:
 	psql "$(STORAGE_DSN)" -f migrations/0001_create_events.sql
 
-.PHONY: build run build-img run-img version test lint migrate
+.PHONY: build run build-img run-img version generate test lint migrate
