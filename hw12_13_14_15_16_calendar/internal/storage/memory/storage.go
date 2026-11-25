@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/storage"
 )
@@ -93,6 +94,40 @@ func (s *Storage) ListEvents(ctx context.Context) ([]storage.Event, error) {
 		events = append(events, event)
 	}
 
+	sortEvents(events)
+
+	return events, nil
+}
+
+func (s *Storage) ListEventsByPeriod(ctx context.Context, userID string, from, to time.Time) ([]storage.Event, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	events := make([]storage.Event, 0, len(s.events))
+	for _, event := range s.events {
+		if event.UserID != userID {
+			continue
+		}
+		if !from.IsZero() && !event.EndAt.After(from) {
+			continue
+		}
+		if !to.IsZero() && !event.StartAt.Before(to) {
+			continue
+		}
+
+		events = append(events, event)
+	}
+
+	sortEvents(events)
+
+	return events, nil
+}
+
+func sortEvents(events []storage.Event) {
 	sort.Slice(events, func(i, j int) bool {
 		if events[i].StartAt.Equal(events[j].StartAt) {
 			return events[i].ID < events[j].ID
@@ -100,8 +135,6 @@ func (s *Storage) ListEvents(ctx context.Context) ([]storage.Event, error) {
 
 		return events[i].StartAt.Before(events[j].StartAt)
 	})
-
-	return events, nil
 }
 
 func (s *Storage) isDateBusy(event storage.Event, excludeID string) bool {

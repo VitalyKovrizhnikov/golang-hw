@@ -12,6 +12,3 @@ CREATE TABLE IF NOT EXISTS events (
 );
 
 CREATE INDEX IF NOT EXISTS events_user_period_idx ON events (user_id, start_at, end_at);
-
--- +goose Down
-DROP TABLE IF EXISTS events;

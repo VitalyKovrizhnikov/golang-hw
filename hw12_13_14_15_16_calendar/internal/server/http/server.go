@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/server/http/openapi"
+	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/storage"
+	"github.com/go-chi/chi/v5"
 )
 
 type Logger interface {
@@ -13,23 +17,39 @@ type Logger interface {
 	Error(msg string)
 }
 
-type Application interface{}
+type Application interface {
+	CreateEvent(ctx context.Context, event storage.Event) error
+	UpdateEvent(ctx context.Context, id string, event storage.Event) error
+	DeleteEvent(ctx context.Context, id string) error
+	ListEventsByPeriod(ctx context.Context, userID string, from, to time.Time) ([]storage.Event, error)
+}
 
 type Server struct {
 	server *http.Server
 }
 
-func NewServer(logger Logger, _ Application, addr string) *Server {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", helloHandler)
-
+func NewServer(logger Logger, application Application, addr string) *Server {
 	return &Server{
 		server: &http.Server{
 			Addr:              addr,
-			Handler:           loggingMiddleware(logger, mux),
+			Handler:           newHandler(logger, application),
 			ReadHeaderTimeout: 5 * time.Second,
 		},
 	}
+}
+
+func newHandler(logger Logger, application Application) http.Handler {
+	router := chi.NewRouter()
+	router.Get("/hello", helloHandler)
+
+	openapi.HandlerWithOptions(newAPI(application), openapi.ChiServerOptions{
+		BaseRouter: router,
+		ErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
+			writeError(w, http.StatusBadRequest, err.Error())
+		},
+	})
+
+	return loggingMiddleware(logger, router)
 }
 
 func (s *Server) Start(ctx context.Context) error {

@@ -181,6 +181,51 @@ func TestListEventsReturnsCopy(t *testing.T) {
 	}
 }
 
+func TestListEventsByPeriod(t *testing.T) {
+	store := New()
+	ctx := context.Background()
+
+	first := testEvent(firstEventID, firstUserID, at(10, 0))
+	second := testEvent(secondEventID, firstUserID, at(12, 0))
+	other := testEvent("event-3", secondUserID, at(10, 0))
+	for _, event := range []storage.Event{first, second, other} {
+		if err := store.CreateEvent(ctx, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	events, err := store.ListEventsByPeriod(ctx, firstUserID, at(9, 0), at(11, 0))
+	if err != nil {
+		t.Fatalf("list by period: %v", err)
+	}
+	if len(events) != 1 || events[0].ID != firstEventID {
+		t.Fatalf("events = %+v, want only %s", events, firstEventID)
+	}
+
+	events, err = store.ListEventsByPeriod(ctx, firstUserID, at(11, 0), time.Time{})
+	if err != nil {
+		t.Fatalf("list with open end: %v", err)
+	}
+	if len(events) != 1 || events[0].ID != secondEventID {
+		t.Fatalf("events = %+v, want only %s", events, secondEventID)
+	}
+
+	events, err = store.ListEventsByPeriod(ctx, "missing-user", time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("list unknown user: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("got %d events for unknown user, want 0", len(events))
+	}
+
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = store.ListEventsByPeriod(canceled, firstUserID, time.Time{}, time.Time{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled error = %v, want context.Canceled", err)
+	}
+}
+
 func TestCanceledContext(t *testing.T) {
 	store := New()
 	ctx, cancel := context.WithCancel(context.Background())
