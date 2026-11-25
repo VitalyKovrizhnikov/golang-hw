@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/metrics"
 	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/server/http/openapi"
 	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/storage"
 )
@@ -72,7 +73,7 @@ func doRequest(t *testing.T, handler http.Handler, method, target, userID, body 
 
 func TestCreateEvent(t *testing.T) {
 	app := &fakeApp{}
-	handler := newHandler(&logRecorder{}, app)
+	handler := newHandler(&logRecorder{}, app, metrics.New())
 
 	body := `{"title":"meeting","description":"sync",` +
 		`"startAt":"2024-01-01T10:00:00Z","endAt":"2024-01-01T11:00:00Z",` +
@@ -136,7 +137,7 @@ func TestCreateEventValidation(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			app := &fakeApp{createErr: test.appErr}
-			handler := newHandler(&logRecorder{}, app)
+			handler := newHandler(&logRecorder{}, app, metrics.New())
 			response := doRequest(t, handler, http.MethodPost, "/events", test.userID, test.body)
 			if response.Code != test.status {
 				t.Fatalf("status = %d, want %d, body = %s", response.Code, test.status, response.Body.String())
@@ -157,7 +158,7 @@ func TestListEvents(t *testing.T) {
 			UserID:  testUserID,
 		}},
 	}
-	handler := newHandler(&logRecorder{}, app)
+	handler := newHandler(&logRecorder{}, app, metrics.New())
 
 	target := "/events?from=2024-01-01T00:00:00Z" +
 		"&to=2024-01-02T00:00:00Z"
@@ -185,7 +186,7 @@ func TestListEvents(t *testing.T) {
 
 func TestUpdateEvent(t *testing.T) {
 	app := &fakeApp{}
-	handler := newHandler(&logRecorder{}, app)
+	handler := newHandler(&logRecorder{}, app, metrics.New())
 	body := `{"title":"updated","startAt":"2024-01-01T12:00:00Z","endAt":"2024-01-01T13:00:00Z"}`
 
 	response := doRequest(t, handler, http.MethodPut, "/events/event-1", testUserID, body)
@@ -205,7 +206,7 @@ func TestUpdateEvent(t *testing.T) {
 
 func TestDeleteEvent(t *testing.T) {
 	app := &fakeApp{}
-	handler := newHandler(&logRecorder{}, app)
+	handler := newHandler(&logRecorder{}, app, metrics.New())
 
 	response := doRequest(t, handler, http.MethodDelete, "/events/event-1", testUserID, "")
 	if response.Code != http.StatusNoContent {
