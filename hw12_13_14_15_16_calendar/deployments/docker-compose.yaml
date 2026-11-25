@@ -1,1 +1,135 @@
-version: "3"
+name: calendar
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: calendar
+      POSTGRES_PASSWORD: calendar
+      POSTGRES_DB: calendar
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U calendar -d calendar"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  migrations:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_DSN: postgres://calendar:calendar@postgres:5432/calendar?sslmode=disable
+    volumes:
+      - ../migrations:/migrations:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["for file in /migrations/*.sql; do echo \"Applying $$file\"; psql \"$$POSTGRES_DSN\" -v ON_ERROR_STOP=1 -f \"$$file\" || exit 1; done"]
+    restart: "no"
+
+  calendar:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    volumes:
+      - ../configs/docker/calendar.toml:/etc/calendar/config.toml:ro
+    ports:
+      - "8888:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/hello >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  scheduler:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile.scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ../configs/docker/scheduler.toml:/etc/calendar/scheduler_config.toml:ro
+    restart: unless-stopped
+
+  storer:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile.storer
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ../configs/docker/storer.toml:/etc/calendar/storer_config.toml:ro
+    restart: unless-stopped
+
+  integration-tests:
+    profiles: ["integration"]
+    build:
+      context: ..
+      dockerfile: build/Dockerfile.integration
+    depends_on:
+      calendar:
+        condition: service_healthy
+      scheduler:
+        condition: service_started
+      storer:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      CALENDAR_URL: http://calendar:8080
+      POSTGRES_DSN: postgres://calendar:calendar@postgres:5432/calendar?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: calendar.notifications
+    restart: "no"
+
+volumes:
+  pgdata:

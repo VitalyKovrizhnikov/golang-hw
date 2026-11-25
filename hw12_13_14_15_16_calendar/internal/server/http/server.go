@@ -40,6 +40,7 @@ func NewServer(logger Logger, application Application, addr string) *Server {
 
 func newHandler(logger Logger, application Application) http.Handler {
 	router := chi.NewRouter()
+	router.Get("/", helloHandler)
 	router.Get("/hello", helloHandler)
 
 	openapi.HandlerWithOptions(newAPI(application), openapi.ChiServerOptions{

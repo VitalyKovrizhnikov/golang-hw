@@ -53,4 +53,13 @@ migrate:
 		psql "$(STORAGE_DSN)" -f "$$file" || exit 1; \
 	done
 
-.PHONY: build run run-scheduler run-storer build-img run-img version generate test lint migrate
+up:
+	docker compose -f deployments/docker-compose.yaml up --build -d
+
+down:
+	docker compose -f deployments/docker-compose.yaml down -v --remove-orphans
+
+integration-tests:
+	go run ./scripts/integration-tests
+
+.PHONY: build run run-scheduler run-storer build-img run-img version generate test lint migrate up down integration-tests

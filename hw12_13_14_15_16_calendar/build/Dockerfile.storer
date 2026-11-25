@@ -1,0 +1,21 @@
+FROM golang:1.19-alpine AS build
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ARG LDFLAGS=""
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" -o /out/calendar_storer ./cmd/calendar_storer
+
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY --from=build /out/calendar_storer /usr/local/bin/calendar_storer
+COPY configs/storer.toml /etc/calendar/storer_config.toml
+
+ENTRYPOINT ["/usr/local/bin/calendar_storer"]
+CMD ["-config", "/etc/calendar/storer_config.toml"]

@@ -1,36 +1,23 @@
-# Собираем в гошке
-FROM golang:1.19 as build
+FROM golang:1.19-alpine AS build
 
-ENV BIN_FILE /opt/calendar/calendar-app
-ENV CODE_DIR /go/src/
+WORKDIR /src
 
-WORKDIR ${CODE_DIR}
-
-# Кэшируем слои с модулями
-COPY go.mod .
-COPY go.sum .
+COPY go.mod go.sum ./
 RUN go mod download
 
-COPY . ${CODE_DIR}
+COPY . .
 
-# Собираем статический бинарник Go (без зависимостей на Си API),
-# иначе он не будет работать в alpine образе.
-ARG LDFLAGS
-RUN CGO_ENABLED=0 go build \
-        -ldflags "$LDFLAGS" \
-        -o ${BIN_FILE} ./cmd/calendar
+ARG LDFLAGS=""
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" -o /out/calendar ./cmd/calendar
 
-# На выходе тонкий образ
-FROM alpine:3.9
+FROM alpine:3.19
 
-LABEL ORGANIZATION="OTUS Online Education"
-LABEL SERVICE="calendar"
-LABEL MAINTAINERS="student@otus.ru"
+RUN apk add --no-cache ca-certificates tzdata
 
-ENV BIN_FILE "/opt/calendar/calendar-app"
-COPY --from=build ${BIN_FILE} ${BIN_FILE}
+COPY --from=build /out/calendar /usr/local/bin/calendar
+COPY configs/config.toml /etc/calendar/config.toml
 
-ENV CONFIG_FILE /etc/calendar/config.toml
-COPY ./configs/config.toml ${CONFIG_FILE}
+EXPOSE 8080
 
-CMD ${BIN_FILE} -config ${CONFIG_FILE}
+ENTRYPOINT ["/usr/local/bin/calendar"]
+CMD ["-config", "/etc/calendar/config.toml"]
