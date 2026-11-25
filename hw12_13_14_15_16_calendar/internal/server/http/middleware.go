@@ -5,6 +5,9 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/metrics"
+	"github.com/go-chi/chi/v5"
 )
 
 type statusWriter struct {
@@ -23,6 +26,34 @@ func (w *statusWriter) Write(data []byte) (int, error) {
 	}
 
 	return w.ResponseWriter.Write(data)
+}
+
+func metricsMiddleware(promMetrics *metrics.Metrics, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		start := time.Now()
+		promMetrics.RequestStarted()
+		writer := &statusWriter{
+			ResponseWriter: w,
+			status:         http.StatusOK,
+		}
+
+		defer func() {
+			route := "unknown"
+			routeContext := chi.RouteContext(r.Context())
+			if routeContext != nil && routeContext.RoutePattern() != "" {
+				route = routeContext.RoutePattern()
+			}
+
+			promMetrics.RequestFinished(r.Method, route, writer.status, time.Since(start))
+		}()
+
+		next.ServeHTTP(writer, r)
+	})
 }
 
 func loggingMiddleware(logger Logger, next http.Handler) http.Handler {

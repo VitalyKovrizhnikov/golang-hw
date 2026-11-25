@@ -106,6 +106,17 @@ services:
       - ../configs/docker/storer.toml:/etc/calendar/storer_config.toml:ro
     restart: unless-stopped
 
+  prometheus:
+    image: quay.io/prometheus/prometheus:v2.54.1
+    depends_on:
+      calendar:
+        condition: service_healthy
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
   integration-tests:
     profiles: ["integration"]
     build:

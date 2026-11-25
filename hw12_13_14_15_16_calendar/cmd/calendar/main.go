@@ -11,6 +11,7 @@ import (
 
 	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/app"
 	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/logger"
+	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/metrics"
 	internalhttp "github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/server/http"
 	storagefactory "github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/storage/factory"
 )
@@ -51,9 +52,10 @@ func run() int {
 	}
 	defer closeStore()
 
-	calendar := app.New(logg, store)
+	promMetrics := metrics.New()
+	calendar := app.New(logg, store, promMetrics)
 	address := net.JoinHostPort(config.HTTP.Host, config.HTTP.Port)
-	server := internalhttp.NewServer(logg, calendar, address)
+	server := internalhttp.NewServer(logg, calendar, promMetrics, address)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

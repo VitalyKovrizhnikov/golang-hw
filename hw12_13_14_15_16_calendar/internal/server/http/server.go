@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/metrics"
 	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/server/http/openapi"
 	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/storage"
 	"github.com/go-chi/chi/v5"
@@ -28,20 +29,24 @@ type Server struct {
 	server *http.Server
 }
 
-func NewServer(logger Logger, application Application, addr string) *Server {
+func NewServer(logger Logger, application Application, promMetrics *metrics.Metrics, addr string) *Server {
 	return &Server{
 		server: &http.Server{
 			Addr:              addr,
-			Handler:           newHandler(logger, application),
+			Handler:           newHandler(logger, application, promMetrics),
 			ReadHeaderTimeout: 5 * time.Second,
 		},
 	}
 }
 
-func newHandler(logger Logger, application Application) http.Handler {
+func newHandler(logger Logger, application Application, promMetrics *metrics.Metrics) http.Handler {
 	router := chi.NewRouter()
+	router.Use(func(next http.Handler) http.Handler {
+		return metricsMiddleware(promMetrics, next)
+	})
 	router.Get("/", helloHandler)
 	router.Get("/hello", helloHandler)
+	router.Handle("/metrics", promMetrics.Handler())
 
 	openapi.HandlerWithOptions(newAPI(application), openapi.ChiServerOptions{
 		BaseRouter: router,
