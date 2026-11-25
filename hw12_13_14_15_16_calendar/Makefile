@@ -1,4 +1,6 @@
 BIN := "./bin/calendar"
+SCHEDULER_BIN := "./bin/calendar_scheduler"
+STORER_BIN := "./bin/calendar_storer"
 DOCKER_IMG="calendar:develop"
 
 GIT_HASH := $(shell git log --format="%h" -n 1)
@@ -9,9 +11,17 @@ STORAGE_DSN ?= postgres://calendar:calendar@localhost:5432/calendar?sslmode=disa
 build:
 	mkdir -p ./bin
 	go build -v -o $(BIN) -ldflags "$(LDFLAGS)" ./cmd/calendar
+	go build -v -o $(SCHEDULER_BIN) -ldflags "$(LDFLAGS)" ./cmd/calendar_scheduler
+	go build -v -o $(STORER_BIN) -ldflags "$(LDFLAGS)" ./cmd/calendar_storer
 
 run: build
 	$(BIN) -config ./configs/config.toml
+
+run-scheduler: build
+	$(SCHEDULER_BIN) -config ./configs/scheduler.toml
+
+run-storer: build
+	$(STORER_BIN) -config ./configs/storer.toml
 
 build-img:
 	docker build \
@@ -38,6 +48,9 @@ lint: install-lint-deps
 	golangci-lint run ./...
 
 migrate:
-	psql "$(STORAGE_DSN)" -f migrations/0001_create_events.sql
+	@for file in migrations/*.sql; do \
+		echo "Applying $$file"; \
+		psql "$(STORAGE_DSN)" -f "$$file" || exit 1; \
+	done
 
-.PHONY: build run build-img run-img version generate test lint migrate
+.PHONY: build run run-scheduler run-storer build-img run-img version generate test lint migrate

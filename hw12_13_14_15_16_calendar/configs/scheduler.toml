@@ -1,0 +1,15 @@
+[logger]
+level = "info"
+
+[storage]
+type = "sql"
+dsn = "postgres://calendar:calendar@localhost:5432/calendar?sslmode=disable"
+
+[kafka]
+brokers = ["localhost:9092"]
+topic = "calendar.notifications"
+group_id = "calendar-storer"
+
+[scheduler]
+interval = "10s"
+retention = "8760h"

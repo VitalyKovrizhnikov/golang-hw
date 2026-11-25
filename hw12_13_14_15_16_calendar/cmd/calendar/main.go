@@ -8,14 +8,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/app"
 	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/logger"
 	internalhttp "github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/server/http"
-	"github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/storage"
-	memorystorage "github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/storage/memory"
-	sqlstorage "github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/storage/sql"
+	storagefactory "github.com/VitalyKovrizhnikov/hw12_13_14_15_16_calendar/internal/storage/factory"
 )
 
 var configFile string
@@ -44,7 +41,10 @@ func run() int {
 
 	logg := logger.New(config.Logger.Level)
 
-	store, closeStore, err := buildStorage(config)
+	store, closeStore, err := storagefactory.Build(storagefactory.Config{
+		Type: config.Storage.Type,
+		DSN:  config.Storage.DSN,
+	})
 	if err != nil {
 		logg.Error("failed to init storage: " + err.Error())
 		return 1
@@ -68,29 +68,4 @@ func run() int {
 	logg.Info("calendar stopped")
 
 	return 0
-}
-
-func buildStorage(config Config) (storage.Storage, func(), error) {
-	switch config.Storage.Type {
-	case storageTypeMemory:
-		return memorystorage.New(), func() {}, nil
-	case storageTypeSQL:
-		store, err := sqlstorage.New(config.Storage.DSN)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if err := store.Connect(ctx); err != nil {
-			return nil, nil, err
-		}
-
-		return store, func() {
-			_ = store.Close(context.Background())
-		}, nil
-	default:
-		return nil, nil, fmt.Errorf("unsupported storage type %q", config.Storage.Type)
-	}
 }

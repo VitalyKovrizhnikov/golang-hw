@@ -10,4 +10,5 @@ type Event struct {
 	Description  string
 	UserID       string
 	NotifyBefore time.Duration
+	NotifiedAt   time.Time
 }
