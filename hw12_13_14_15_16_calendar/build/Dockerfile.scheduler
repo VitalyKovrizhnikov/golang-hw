@@ -1,0 +1,21 @@
+FROM golang:1.19-alpine AS build
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ARG LDFLAGS=""
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "$LDFLAGS" -o /out/calendar_scheduler ./cmd/calendar_scheduler
+
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY --from=build /out/calendar_scheduler /usr/local/bin/calendar_scheduler
+COPY configs/scheduler.toml /etc/calendar/scheduler_config.toml
+
+ENTRYPOINT ["/usr/local/bin/calendar_scheduler"]
+CMD ["-config", "/etc/calendar/scheduler_config.toml"]
